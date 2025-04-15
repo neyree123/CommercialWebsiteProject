@@ -64,32 +64,32 @@ IHubContext<NotificationHub> hubContext)
         }
     }
 
-    private async Task HandlePaymentIntentSucceeded(PaymentIntent intent)
+ private async Task HandlePaymentIntentSucceeded(PaymentIntent intent)
+ {
+    if (intent.Status == "succeeded") 
     {
-        if(intent.Status == "succeeded")
+        var spec = new OrderSpecifications(intent.Id, true);
+        var order = await unit.Repository<Core.Entities.Order>().GetEntityWithSpec(spec)
+            ?? throw new Exception("Order not found");
+        var orderTotalInCents = (long)Math.Round(order.GetTotal() * 100, 
+            MidpointRounding.AwayFromZero);
+        if (orderTotalInCents != intent.Amount)
         {
-            var spec = new OrderSpecifications(intent.Id, true);
-            var order = await unit.Repository<Core.Entities.Order>().GetEntityWithSpec(spec) 
-                ?? throw new Exception("Order not found");
-
-            if((long)order.GetTotal() * 100 != intent.Amount)
-            {
-                order.Status = OrderStatus.PaymentMismatch;
-            }
-            else
-            {
-                order.Status = OrderStatus.PaymentRecieved;
-            }
-
-            await unit.Complete();
-
-            var connectionId = NotificationHub.GetConnectionIdByEmail(order.BuyerEmail);
-            if(!string.IsNullOrEmpty(connectionId))
-            {
-                await hubContext.Clients.Client(connectionId).SendAsync("OrderCompleteNotifications", order.ToDTO());
-            }
+            order.Status = OrderStatus.PaymentMismatch;
+        } 
+        else
+        {
+            order.Status = OrderStatus.PaymentRecieved;
+        }
+        await unit.Complete();
+        var connectionId = NotificationHub.GetConnectionIdByEmail(order.BuyerEmail);
+        if (!string.IsNullOrEmpty(connectionId))
+        {
+            await hubContext.Clients.Client(connectionId)
+                .SendAsync("OrderCompleteNotification", order.ToDTO());
         }
     }
+ }
 
     private Event ConstructStripeEvent(string json)
     {
